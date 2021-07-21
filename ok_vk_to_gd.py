@@ -8,20 +8,40 @@ from googleapiclient.discovery import build
 import requests
 import os
 
+token_vk = 'tok.txt'
+token_ok = 'tok_ok.txt'
+token_gd = 'C:/Users/Катерина/Downloads/civil-entry-319712-62256173f188.json'
+
+
+def get_token_vk(file_name):
+    with open(os.path.join(os.getcwd(), file_name), 'r') as token_file:
+        token = token_file.readline().strip()
+        token_id = token_file.readline().strip()
+    return [token, token_id]
+
+
+def get_token_ok(file_name):
+    with open(os.path.join(os.getcwd(), file_name), 'r') as token_file:
+        app_key = token_file.readline().strip()
+        sess_key = token_file.readline().strip()
+        sig = token_file.readline().strip()
+        token_id = token_file.readline().strip()
+    return [app_key, sess_key, sig, token_id]
+
 
 class GDUpload:
-    def __init__(self, scopes, service_account_file):
+    def __init__(self, scopes, service_account_file, folder_id='1qqgo_QbjNsUh5ivgb8IFHkRI0N7_PodV'):
         self.scopes = scopes
         self.service_account_file = service_account_file
+        self.folder_id = folder_id
 
     def upload(self, name, file_path):
         credentials = service_account.Credentials.from_service_account_file(
             self.service_account_file, scopes=self.scopes)
         service = build('drive', 'v3', credentials=credentials)
-        folder_id = ''
         file_metadata = {
             'name': name,
-            'parents': [folder_id]
+            'parents': [self.folder_id]
         }
         media = MediaFileUpload(file_path, resumable=True)
         service.files().create(body=file_metadata, media_body=media, fields='id,webViewLink').execute()
@@ -29,10 +49,13 @@ class GDUpload:
 
 class PhotoVkLoader:
     VKAPI_BASE_URL = 'http://api.vk.com/method/'
-    V = '5.131'
 
-    def __init__(self, token: str):
-        self.token = token
+    def __init__(self, tokens, version='5.131', gdupload=GDUpload(['https://www.googleapis.com/auth/drive'],
+                                                                  token_gd)):
+        self.token = tokens[0]
+        self.id = tokens[1]
+        self.version = version
+        self.gdupload = gdupload
 
     @staticmethod
     def get_max_photo_size(size_dict):
@@ -41,12 +64,12 @@ class PhotoVkLoader:
         else:
             return size_dict['height']
 
-    def get_photos_from_vk(self, user_id, count=5, album_id='profile'):
+    def get_photos_from_vk(self, count=5, album_id='profile'):
         photos_get_url = urljoin(self.VKAPI_BASE_URL, 'photos.get')
         response = requests.get(photos_get_url, params={
             'access_token': f'{self.token}',
-            'v': self.V,
-            'owner_id': user_id,
+            'v': self.version,
+            'owner_id': self.id,
             'album_id': album_id,
             'extended': 1,
             'count': count,
@@ -54,10 +77,10 @@ class PhotoVkLoader:
             'photo_sizes': 1
         })
         all_photos = response.json()['response']['items']
-        self.upload_photo_to_yd(all_photos)
+        self.upload_photo_to_gd(all_photos)
         return all_photos
 
-    def upload_photo_to_yd(self, photos):
+    def upload_photo_to_gd(self, photos):
         new_all_photo = []
         data_for_json = []
         title_list = []
@@ -69,7 +92,7 @@ class PhotoVkLoader:
             max_photo_url = max(all_size, key=self.get_max_photo_size)['url']
             max_size_type = max(all_size, key=self.get_max_photo_size)['type']
             title = str(name_file) + '.jpg'
-            temp_dict = {
+            photo_dict = {
                 'date': normal_date,
                 'likes': name_file,
                 'max_photo_url': max_photo_url,
@@ -82,10 +105,8 @@ class PhotoVkLoader:
             with open(title, 'wb') as f:
                 f.write(download_photo.content)
             basename = os.path.basename(title)
-            gdupload = GDUpload(['https://www.googleapis.com/auth/drive'],
-                                '')
-            gdupload.upload(name=title, file_path=basename)
-            new_all_photo.append(temp_dict)
+            self.gdupload.upload(name=title, file_path=basename)
+            new_all_photo.append(photo_dict)
             data_for_json.append({"file_name": title, "size": max_size_type})
             with open('Photo_from_vk.json', 'w') as f:
                 json.dump(data_for_json, f, indent=2)
@@ -93,25 +114,28 @@ class PhotoVkLoader:
 
 
 class OkLoader:
-    def __init__(self, app_key: str, sess_key: str, sig: str):
-        self.app_key = app_key
-        self.sess_key = sess_key
-        self.sig = sig
+    def __init__(self, tokens, gdupload=GDUpload(['https://www.googleapis.com/auth/drive'],
+                                                 token_gd)):
+        self.app_key = tokens[0]
+        self.sess_key = tokens[1]
+        self.sig = tokens[2]
+        self.fid = tokens[3]
+        self.gdupload = gdupload
 
-    def get_ok_photo(self, fid):
+    def get_ok_photo(self):
         response = requests.get('https://api.ok.ru/fb.do', params={
             'application_key': self.app_key,
-            'fid': fid,
+            'fid': self.fid,
             'format': 'json',
             'method': 'photos.getPhotos',
             'session_key': self.sess_key,
             'sig': self.sig
         })
         photos = response.json().get('photos')
-        self.ulpoad_photo_to_yd(photos)
+        self.ulpoad_photo_to_gd(photos)
         return photos
 
-    def ulpoad_photo_to_yd(self, photos):
+    def ulpoad_photo_to_gd(self, photos):
         data_for_json = []
         for pic in tqdm.tqdm(photos):
             url = pic['pic640x480']
@@ -120,9 +144,7 @@ class OkLoader:
             with open(name, 'wb') as f:
                 f.write(download_photo.content)
             basename = os.path.basename(name)
-            gdupload = GDUpload(['https://www.googleapis.com/auth/drive'],
-                                '')
-            gdupload.upload(name=name, file_path=basename)
+            self.gdupload.upload(name=name, file_path=basename)
             data_for_json.append({"file_name": name, "size": '640x480'})
             with open('Photo_from_ok.json', 'w') as f:
                 json.dump(data_for_json, f, indent=2)
@@ -130,7 +152,7 @@ class OkLoader:
 
 
 if __name__ == '__main__':
-    vkload = PhotoVkLoader()
+    vkload = PhotoVkLoader(get_token_vk(token_vk))
     vkload.get_photos_from_vk()
-    OkLoader = OkLoader()
+    OkLoader = OkLoader(get_token_ok(token_ok))
     OkLoader.get_ok_photo()

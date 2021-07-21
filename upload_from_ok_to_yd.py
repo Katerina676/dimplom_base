@@ -1,11 +1,24 @@
 import requests
 import json
 import tqdm
+import os
+
+token_ok = 'tok_ok.txt'  # токен и id ок
+token_ya = 'tok_ya.txt'  # токен яндекс диска
+
+
+def get_token(file_name):
+    with open(os.path.join(os.getcwd(), file_name), 'r') as token_file:
+        app_key = token_file.readline().strip()
+        sess_key = token_file.readline().strip()
+        sig = token_file.readline().strip()
+        token_id = token_file.readline().strip()
+    return [app_key, sess_key, sig, token_id]
 
 
 class YaUploader:
-    def __init__(self, token: str):
-        self.token = token
+    def __init__(self, tokens):
+        self.token = tokens[0]
 
     def get_headers(self):
         return {"Authorization": f'OAuth {self.token}'}
@@ -28,15 +41,17 @@ class YaUploader:
 
 
 class OkLoader:
-    def __init__(self, app_key: str, sess_key: str, sig: str):
-        self.app_key = app_key
-        self.sess_key = sess_key
-        self.sig = sig
+    def __init__(self, tokens, uploader=YaUploader(get_token(token_ya))):
+        self.app_key = tokens[0]
+        self.sess_key = tokens[1]
+        self.sig = tokens[2]
+        self.fid = tokens[3]
+        self.uploader = uploader
 
-    def get_ok_photo(self, fid):
+    def get_ok_photo(self):
         response = requests.get('https://api.ok.ru/fb.do', params={
             'application_key': self.app_key,
-            'fid': fid,
+            'fid': self.fid,
             'format': 'json',
             'method': 'photos.getPhotos',
             'session_key': self.sess_key,
@@ -51,8 +66,7 @@ class OkLoader:
         for pic in tqdm.tqdm(photos):
             url = pic['pic640x480']
             name = pic['id']
-            uploader = YaUploader()
-            uploader.upload(file_path=url, file_name=name)
+            self.uploader.upload(file_path=url, file_name=name)
             data_for_json.append({"file_name": f'{name}.jpg', "size": '640x480'})
             with open('Photo_from_ok.json', 'w') as f:
                 json.dump(data_for_json, f, indent=2)
@@ -60,5 +74,5 @@ class OkLoader:
 
 
 if __name__ == '__main__':
-    OkLoader = OkLoader()
+    OkLoader = OkLoader(get_token(token_ok))
     OkLoader.get_ok_photo()

@@ -3,11 +3,23 @@ from urllib.parse import urljoin
 import datetime
 import json
 import tqdm
+import os
+
+
+token_vk = 'tok.txt'  # токен и id вк
+token_ya = 'tok_ya.txt'  # токен яндекс диска
+
+
+def get_token(file_name):
+    with open(os.path.join(os.getcwd(), file_name), 'r') as token_file:
+        token = token_file.readline().strip()
+        token_id = token_file.readline().strip()
+    return [token, token_id]
 
 
 class YaUploader:
-    def __init__(self, token: str):
-        self.token = token
+    def __init__(self, tokens):
+        self.token = tokens[0]
 
     def get_headers(self):
         return {"Authorization": f'OAuth {self.token}'}
@@ -31,10 +43,12 @@ class YaUploader:
 
 class PhotoVkLoader:
     VKAPI_BASE_URL = 'http://api.vk.com/method/'
-    V = '5.131'
 
-    def __init__(self, token: str):
-        self.token = token
+    def __init__(self, tokens, version='5.131', uploader=YaUploader(get_token(token_ya))):
+        self.token = tokens[0]
+        self.token_id = tokens[1]
+        self.version = version
+        self.uploader = uploader
 
     @staticmethod
     def get_max_photo_size(size_dict):
@@ -43,12 +57,12 @@ class PhotoVkLoader:
         else:
             return size_dict['height']
 
-    def get_photos_from_vk(self, user_id, count=5, album_id='profile'):
+    def get_photos_from_vk(self, count=5, album_id='profile'):
         photos_get_url = urljoin(self.VKAPI_BASE_URL, 'photos.get')
         response = requests.get(photos_get_url, params={
             'access_token': f'{self.token}',
-            'v': self.V,
-            'owner_id': user_id,
+            'v': self.version,
+            'owner_id': self.token_id,
             'album_id': album_id,
             'extended': 1,
             'count': count,
@@ -71,7 +85,7 @@ class PhotoVkLoader:
             max_photo_url = max(all_size, key=self.get_max_photo_size)['url']
             max_size_type = max(all_size, key=self.get_max_photo_size)['type']
             title = str(name_file)
-            temp_dict = {
+            photo_dict = {
                 'date': normal_date,
                 'likes': name_file,
                 'max_photo_url': max_photo_url,
@@ -80,9 +94,8 @@ class PhotoVkLoader:
             if title in title_list:
                 title += '_' + normal_date
             title_list.append(title)
-            uploader = YaUploader()
-            uploader.upload(file_path=max_photo_url, file_name=title)
-            new_all_photo.append(temp_dict)
+            self.uploader.upload(file_path=max_photo_url, file_name=title)
+            new_all_photo.append(photo_dict)
             data_for_json.append({"file_name": f'{title}.jpg', "size": max_size_type})
             with open('Photo_from_vk.json', 'w') as f:
                 json.dump(data_for_json, f, indent=2)
@@ -90,5 +103,5 @@ class PhotoVkLoader:
 
 
 if __name__ == '__main__':
-    vkload = PhotoVkLoader()
-    vkload.get_photos_from_vk('552934290')
+    vkload = PhotoVkLoader(get_token(token_vk))
+    vkload.get_photos_from_vk()
