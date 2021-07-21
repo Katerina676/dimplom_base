@@ -8,9 +8,9 @@ from googleapiclient.discovery import build
 import requests
 import os
 
-token_vk = 'tok.txt'
-token_ok = 'tok_ok.txt'
-token_gd = 'C:/Users/Катерина/Downloads/civil-entry-319712-62256173f188.json'
+token_vk = 'tok.txt'  # токен и id вк
+token_ok = 'tok_ok.txt'  # ключи к ок и id
+token_gd = ''  # адрес к токенам гугл драйва
 
 
 def get_token_vk(file_name):
@@ -30,7 +30,7 @@ def get_token_ok(file_name):
 
 
 class GDUpload:
-    def __init__(self, scopes, service_account_file, folder_id='1qqgo_QbjNsUh5ivgb8IFHkRI0N7_PodV'):
+    def __init__(self, scopes, service_account_file, folder_id=''):   # folder_id твоя папка для сохранения в драйве
         self.scopes = scopes
         self.service_account_file = service_account_file
         self.folder_id = folder_id
